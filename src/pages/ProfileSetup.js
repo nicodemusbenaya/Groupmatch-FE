@@ -18,6 +18,9 @@ const ProfileSetup = () => {
   const { toast } = useToast();
   const fileInputRef = useRef(null);
 
+  // REF PENGUNCI: Bersifat synchronous, mencegah double-submit instan
+  const isSubmitting = useRef(false);
+
   const [formData, setFormData] = useState({
     name: user?.name || '',
     birthdate: user?.birthdate || '',
@@ -46,7 +49,7 @@ const ProfileSetup = () => {
       reader.onloadend = () => {
         setFormData({
           ...formData,
-          avatar: reader.result // Simpan sebagai Base64 string
+          avatar: reader.result
         });
       };
       reader.readAsDataURL(file);
@@ -54,7 +57,7 @@ const ProfileSetup = () => {
   };
 
   const handleAddSkill = (e) => {
-    e.preventDefault();
+    e.preventDefault(); // Mencegah form submit saat tekan Enter di input skill
     if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
       setFormData({
         ...formData,
@@ -73,7 +76,11 @@ const ProfileSetup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation(); // Hentikan event bubbling
     
+    // GUARD: Jika sedang submitting (terkunci), hentikan eksekusi segera!
+    if (isSubmitting.current) return;
+
     if (!formData.name || !formData.birthdate || !formData.role || formData.skills.length === 0) {
       toast({
         title: 'Data tidak lengkap',
@@ -83,13 +90,30 @@ const ProfileSetup = () => {
       return;
     }
     
+    // KUNCI PINTU: Set ref true agar klik berikutnya ditolak
+    isSubmitting.current = true;
     setLoading(true);
-    // updateProfile di AuthContext akan menyimpan data (termasuk avatar Base64) ke localStorage
-    updateProfile(formData);
-    
-    toast({ title: 'Profil berhasil disimpan!', description: 'Anda dapat mulai mencari tim.' });
-    navigate('/dashboard');
-    setLoading(false);
+
+    try {
+      // updateProfile di AuthContext akan menyimpan data
+      await updateProfile(formData);
+      
+      toast({ title: 'Profil berhasil disimpan!', description: 'Anda dapat mulai mencari tim.' });
+      navigate('/dashboard');
+      
+    } catch (error) {
+      console.error("Profile update failed:", error);
+      toast({
+        title: 'Gagal Menyimpan',
+        description: 'Terjadi kesalahan saat menyimpan profil.',
+        variant: 'destructive'
+      });
+      
+      // BUKA KUNCI: Hanya jika gagal, supaya user bisa coba lagi
+      // Jika sukses, kita pindah halaman (unmount), jadi tidak perlu set false
+      isSubmitting.current = false;
+      setLoading(false);
+    }
   };
 
   return (
@@ -245,7 +269,7 @@ const ProfileSetup = () => {
             <Button 
               type="submit" 
               className="w-full bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg shadow-sm font-medium" 
-              disabled={loading}
+              disabled={loading} // Tetap disabled secara visual
             >
               {loading ? 'Menyimpan...' : 'Simpan Profil'}
             </Button>

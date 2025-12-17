@@ -4,98 +4,114 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
-import { Mail, Lock, Chrome } from 'lucide-react';
+import { Loader2, LogIn } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
   const { login, loginWithGoogle } = useAuth();
   const { toast } = useToast();
-  const [formData, setFormData] = useState({ email: '', password: '' });
+  
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  });
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    const result = await login(formData.email, formData.password);
-    
-    if (result.success) {
-      toast({ title: 'Login berhasil!', description: 'Selamat datang kembali.' });
-      navigate('/dashboard');
-    } else {
-      toast({ 
-        title: 'Login gagal', 
-        description: result.error || 'Email atau password salah.',
-        variant: 'destructive'
-      });
-    }
-    setLoading(false);
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.id]: e.target.value
+    });
   };
 
-  const handleGoogleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
     setLoading(true);
-    const result = await loginWithGoogle();
+
+    const result = await login(formData.email, formData.password);
+
     if (result.success) {
-      toast({ title: 'Login berhasil!', description: 'Selamat datang via Google.' });
-      navigate('/profile-setup');
+      toast({
+        title: "Login Berhasil",
+        description: "Selamat datang kembali!",
+      });
+      navigate('/dashboard');
+    } else {
+      toast({
+        title: "Login Gagal",
+        description: result.error || "Email atau password salah.",
+        variant: "destructive"
+      });
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  // PERBAIKAN DI SINI:
+  const handleGoogleLogin = async () => {
+    try {
+      // Kita tidak perlu menunggu result atau mengecek success
+      // karena browser akan langsung redirect ke Google
+      await loginWithGoogle(); 
+    } catch (error) {
+      console.error("Google login error:", error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat login Google.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md shadow-sm border border-slate-100 rounded-2xl">
-        <CardHeader className="space-y-3 text-center pb-6">
-          <div className="mx-auto">
-            <h1 className="text-3xl font-bold text-cyan-600 mb-1">TeamSync</h1>
-          </div>
-          <CardTitle className="text-2xl font-bold text-slate-900">Masuk</CardTitle>
-          <CardDescription className="text-slate-500">
-            Masuk ke akun Anda untuk mulai mencari tim
+      <Card className="w-full max-w-md shadow-lg border-slate-100">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-2xl font-bold text-cyan-700">Masuk Akun</CardTitle>
+          <CardDescription>
+            Masukkan email dan password Anda untuk login
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-700">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="nama@email.com"
-                  className="pl-10 bg-slate-50 border-slate-200 focus:ring-cyan-500 focus:border-cyan-500 rounded-lg"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="nama@email.com" 
+                value={formData.email}
+                onChange={handleChange}
+                required 
+              />
             </div>
-            
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-700">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  className="pl-10 bg-slate-50 border-slate-200 focus:ring-cyan-500 focus:border-cyan-500 rounded-lg"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link to="#" className="text-xs text-cyan-600 hover:underline">
+                  Lupa password?
+                </Link>
               </div>
+              <Input 
+                id="password" 
+                type="password" 
+                value={formData.password}
+                onChange={handleChange}
+                required 
+              />
             </div>
-
-            <Button 
-              type="submit" 
-              className="w-full bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg shadow-sm font-medium" 
-              disabled={loading}
-            >
-              {loading ? 'Memproses...' : 'Masuk'}
+            <Button type="submit" className="w-full bg-cyan-600 hover:bg-cyan-700" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                <>
+                  <LogIn className="mr-2 h-4 w-4" /> Masuk
+                </>
+              )}
             </Button>
           </form>
 
@@ -104,27 +120,25 @@ const Login = () => {
               <span className="w-full border-t border-slate-200" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-slate-500">Atau lanjutkan dengan</span>
+              <span className="bg-white px-2 text-slate-500">Atau lanjut dengan</span>
             </div>
           </div>
 
-          <Button
-            type="button"
-            className="w-full border-2 border-slate-200 text-slate-600 hover:border-cyan-500 hover:text-cyan-600 bg-transparent rounded-lg font-medium"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-          >
-            <Chrome className="mr-2 h-4 w-4" />
-            Masuk dengan Google
+          <Button variant="outline" type="button" className="w-full" onClick={handleGoogleLogin}>
+            <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+              <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+            </svg>
+            Google
           </Button>
-
-          <p className="text-center text-sm text-slate-600">
-            Belum punya akun?{' '}
-            <Link to="/register" className="font-semibold text-cyan-600 hover:text-cyan-700">
+        </CardContent>
+        <CardFooter className="justify-center">
+          <p className="text-sm text-slate-600">
+            Belum punya akun?{" "}
+            <Link to="/register" className="text-cyan-600 font-medium hover:underline">
               Daftar sekarang
             </Link>
           </p>
-        </CardContent>
+        </CardFooter>
       </Card>
     </div>
   );

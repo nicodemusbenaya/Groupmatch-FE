@@ -18,15 +18,13 @@ export const RoomProvider = ({ children }) => {
   const { toast } = useToast();
   
   const [activeRoom, setActiveRoom] = useState(null);
-  const [matchmakingStatus, setMatchmakingStatus] = useState('idle'); // idle, searching, matched
+  const [matchmakingStatus, setMatchmakingStatus] = useState('idle'); 
   const [messages, setMessages] = useState([]);
+  const [roomHistory, setRoomHistory] = useState([]); // Default empty array
   
-  // WebSocket Reference
   const socketRef = useRef(null);
-  // Polling Interval Reference
   const pollingRef = useRef(null);
 
-  // Fungsi Helper: Bersihkan koneksi saat unmount atau room berakhir
   const cleanupConnection = () => {
     if (socketRef.current) {
       socketRef.current.close();
@@ -38,26 +36,24 @@ export const RoomProvider = ({ children }) => {
     }
   };
 
-  // 1. Fungsi Memulai Matchmaking
   const startMatchmaking = async () => {
+    if (!user) return;
     setMatchmakingStatus('searching');
     setMessages([]);
 
     try {
-      // Panggil API Backend
+      // 1. Join Queue
       const response = await api.post('/matchmaking/join');
       const data = response.data;
 
       if (data.room_id) {
-        // KASUS A: Langsung dapat room (misal user terakhir yang melengkapi tim)
+        // Match instan (user terakhir)
         console.log("Match Found immediately:", data.room_id);
-        handleMatchFound(data.room_id);
+        handleMatchFound(data.room_id, { leader_id: data.leader_id });
       } else {
-        // KASUS B: Masuk antrian (Queue)
-        console.log("Joined Queue, waiting for match...");
-        toast({ title: 'Masuk Antrian', description: 'Mencari anggota tim lain...' });
-        
-        // Mulai Polling untuk mengecek status Room
+        // Masuk antrian
+        console.log("Joined Queue, waiting...");
+        toast({ title: 'Masuk Antrian', description: 'Mencari tim...' });
         startPollingRoom();
       }
 
@@ -66,109 +62,134 @@ export const RoomProvider = ({ children }) => {
       setMatchmakingStatus('idle');
       toast({ 
         title: 'Gagal', 
-        description: error.response?.data?.detail || 'Gagal bergabung ke matchmaking.',
+        description: error.response?.data?.detail || 'Gagal join matchmaking.',
         variant: 'destructive'
       });
     }
   };
 
-  // 2. Fungsi Polling (Cek Room secara berkala)
+  // LOGIKA POLLING CERDAS (SMART POLLING)
   const startPollingRoom = () => {
-    // Cek setiap 3 detik
+    if (pollingRef.current) clearInterval(pollingRef.current);
+
     pollingRef.current = setInterval(async () => {
       try {
-        const response = await api.get('/rooms/my');
-        // Backend mengembalikan object Room jika ada, atau message jika tidak
-        if (response.data && response.data.id) {
-            console.log("Match Found via Polling!", response.data.id);
-            clearInterval(pollingRef.current); // Stop polling
-            handleMatchFound(response.data.id, response.data);
+        // STRATEGI 1: Cek endpoint /rooms/my (Hanya bekerja untuk Leader)
+        try {
+            const myRoomRes = await api.get('/rooms/my');
+            if (myRoomRes.data && myRoomRes.data.id) {
+                console.log("Match Found via /rooms/my!");
+                clearInterval(pollingRef.current);
+                handleMatchFound(myRoomRes.data.id, myRoomRes.data);
+                return;
+            }
+        } catch (e) {
+            // Ignore error 404 from /rooms/my
         }
+
+        // STRATEGI 2: Fallback cek SEMUA room (Untuk Member biasa)
+        // Kita ambil semua room dan cari manual apakah user ada di dalamnya
+        const allRoomsRes = await api.get('/rooms/'); // Backend endpoint: GET /rooms/
+        const allRooms = allRoomsRes.data;
+        
+        if (Array.isArray(allRooms)) {
+            // Cari room dimana user terdaftar sebagai member
+            // Asumsi backend 'Room' object punya field 'members' atau 'room_members'
+            const myRoom = allRooms.find(r => {
+                // Cek jika r.members ada dan user.id ada di dalamnya
+                if (r.members && Array.isArray(r.members)) {
+                    return r.members.some(m => m.user_id === user.id || m.id === user.id);
+                }
+                return false;
+            });
+
+            if (myRoom) {
+                console.log("Match Found via /rooms/ list scan!");
+                clearInterval(pollingRef.current);
+                handleMatchFound(myRoom.id, myRoom);
+            }
+        }
+
       } catch (error) {
-        // Abaikan error 404/belum ketemu room, lanjut polling
-        // Tapi jika error auth (401), stop polling
+        console.log("Polling checking...", error);
         if (error.response && error.response.status === 401) {
             clearInterval(pollingRef.current);
             setMatchmakingStatus('idle');
         }
       }
-    }, 3000);
+    }, 3000); // Cek setiap 3 detik
   };
 
-  // 3. Handler saat Room Ditemukan
-  const handleMatchFound = (roomId, roomData = null) => {
+  const handleMatchFound = (roomId, roomData) => {
     setMatchmakingStatus('matched');
     
-    // Set data awal room (nanti diperlengkap via WebSocket)
-    setActiveRoom(prev => ({
+    // Mapping data member dari backend ke format frontend
+    // Jika backend belum kirim member lengkap, kita tunggu WebSocket users_list
+    let initialMembers = [];
+    if (roomData && roomData.members) {
+        initialMembers = roomData.members.map(m => ({
+            id: m.user_id || m.id,
+            name: m.username || m.name || 'User',
+            username: m.username || 'user',
+            role: 'Member',
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.username || m.id}`
+        }));
+    }
+
+    setActiveRoom({
         id: roomId.toString(),
         leaderId: roomData?.leader_id,
-        members: [], // Akan diisi oleh WebSocket
+        members: initialMembers,
         status: 'active'
-    }));
+    });
 
-    // Sambungkan WebSocket
     connectWebSocket(roomId);
   };
 
-  // 4. Koneksi WebSocket
   const connectWebSocket = (roomId) => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    // URL: ws://localhost:8000/ws/rooms/{id}?token={token}
     const wsUrl = `${SOCKET_URL}/ws/rooms/${roomId}?token=${token}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log("Connected to Chat Room");
-      toast({ title: 'Terhubung!', description: 'Anda telah masuk ke dalam tim.' });
+      console.log("WS Connected");
+      toast({ title: 'Tim Terbentuk!', description: 'Anda telah masuk ke ruang kolaborasi.' });
     };
 
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
         handleSocketMessage(payload);
-      } catch (e) {
-        console.error("Invalid WS message", e);
-      }
+      } catch (e) { console.error(e); }
     };
 
-    ws.onclose = () => {
-      console.log("Disconnected from Chat Room");
-    };
-
+    ws.onclose = () => console.log("WS Disconnected");
     socketRef.current = ws;
   };
 
-  // 5. Handle Pesan dari WebSocket
   const handleSocketMessage = (payload) => {
     const { type, data } = payload;
 
     switch (type) {
         case 'users_list':
-            // Backend mengirim list user saat connect
-            // data format: [{ user_id, username }, ...]
+            // Update list member dari data real-time WebSocket
             setActiveRoom(prev => ({
                 ...prev,
                 members: data.map(u => ({
                     id: u.user_id,
-                    name: u.username, // Backend pakai 'username'
+                    name: u.username,
                     username: u.username,
-                    role: 'Member', // Backend belum kirim role di ws list, default dulu
-                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}` // Generate avatar
+                    role: 'Member', // Backend belum kirim role via WS
+                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
                 }))
             }));
             break;
 
-        case 'user_join':
-            toast({ description: `${data.username} bergabung.` });
-            // Refresh member list logic bisa ditambahkan disini atau via users_list
-            break;
-
         case 'chat':
             setMessages(prev => [...prev, {
-                id: Date.now(), // Generate local ID
+                id: Date.now(),
                 userId: data.user_id,
                 username: data.username,
                 text: data.text,
@@ -176,21 +197,13 @@ export const RoomProvider = ({ children }) => {
                 type: 'user'
             }]);
             break;
-            
-        default:
-            break;
+        default: break;
     }
   };
 
   const sendMessage = (text) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      const payload = {
-        type: 'chat',
-        text: text
-      };
-      socketRef.current.send(JSON.stringify(payload));
-    } else {
-        toast({ title: "Koneksi terputus", variant: "destructive" });
+      socketRef.current.send(JSON.stringify({ type: 'chat', text }));
     }
   };
 
@@ -201,22 +214,16 @@ export const RoomProvider = ({ children }) => {
     setMessages([]);
   };
 
-  const endSession = () => {
-    // Logic untuk mengakhiri sesi di backend belum ada di router yang Anda upload
-    // Jadi kita perlakukan sama dengan leaveRoom dulu
-    leaveRoom();
-  };
+  const endSession = () => leaveRoom();
 
-  // Cleanup effect
-  useEffect(() => {
-    return () => cleanupConnection();
-  }, []);
+  useEffect(() => { return () => cleanupConnection(); }, []);
 
   return (
     <RoomContext.Provider value={{
       activeRoom,
       matchmakingStatus,
       messages,
+      roomHistory,
       startMatchmaking,
       sendMessage,
       endSession,
