@@ -1,16 +1,20 @@
 import axios from 'axios';
 
-// Ganti dengan URL backend Anda yang sebenarnya
-const BASE_URL = 'http://localhost:8000'; 
+// Konfigurasi URL Backend
+// Gunakan process.env jika ada, atau fallback ke localhost
+const HTTP_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+
+export const SOCKET_URL = WS_URL;
 
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: HTTP_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Interceptor: Otomatis menyisipkan Token JWT ke setiap request jika user sudah login
+// Interceptor: Otomatis menyisipkan Token JWT ke setiap request
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');

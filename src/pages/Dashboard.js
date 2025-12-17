@@ -7,14 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { ROLES } from '../mock/mockData';
 import { Tag, Users, LogOut, Loader2, Zap, Settings, UserCircle, ArrowRight } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { startMatchmaking, matchmakingStatus, roomHistory, activeRoom } = useRoom();
+  
+  // PERBAIKAN: Tambahkan default value = [] untuk roomHistory untuk mencegah crash
+  const { 
+    startMatchmaking, 
+    matchmakingStatus = 'idle', 
+    roomHistory = [], 
+    activeRoom 
+  } = useRoom();
+  
   const { toast } = useToast();
 
   const handleStartMatchmaking = () => {
@@ -134,7 +141,7 @@ const Dashboard = () => {
                   <h3 className="font-bold text-xl text-slate-900">{user?.name}</h3>
                   <p className="text-sm text-slate-500 mb-3 font-medium">@{user?.username}</p>
                   <Badge className="bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200 rounded-full px-4 py-1.5 transition-colors">
-                    {user?.role}
+                    {user?.role || 'Belum ada role'}
                   </Badge>
                 </div>
 
@@ -145,11 +152,15 @@ const Dashboard = () => {
                       Skills
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {user?.skills?.map((skill, index) => (
-                        <Badge key={index} variant="outline" className="text-slate-600 border-slate-200 rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-50">
-                          {skill}
-                        </Badge>
-                      ))}
+                      {user?.skills?.length > 0 ? (
+                        user.skills.map((skill, index) => (
+                          <Badge key={index} variant="outline" className="text-slate-600 border-slate-200 rounded-lg px-2.5 py-1 text-xs font-medium bg-slate-50">
+                            {skill}
+                          </Badge>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">Belum ada skill ditambahkan</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -225,7 +236,8 @@ const Dashboard = () => {
               
               <Card className="bg-white rounded-2xl shadow-sm border border-slate-100">
                 <CardContent className="p-0">
-                  {roomHistory.length === 0 ? (
+                  {/* GUARD CLAUSE: Pastikan roomHistory ada sebelum mengakses .length */}
+                  {!roomHistory || roomHistory.length === 0 ? (
                     <div className="text-center py-16 px-4">
                       <div className="bg-slate-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
                         <Users className="h-8 w-8 text-slate-300" />
@@ -239,11 +251,11 @@ const Dashboard = () => {
                         <div key={room.id} className="p-5 hover:bg-slate-50 transition-colors flex items-center justify-between group">
                           <div className="flex items-center gap-4">
                             <div className="h-12 w-12 bg-cyan-100 rounded-xl flex items-center justify-center text-cyan-600 font-bold text-lg">
-                              #{room.id.slice(-2)}
+                              #{room.id ? room.id.slice(-2) : '??'}
                             </div>
                             <div>
                               <h4 className="font-bold text-slate-900 group-hover:text-cyan-700 transition-colors">
-                                Tim #{room.id.slice(-8)}
+                                Tim #{room.id ? room.id.slice(-8) : 'Unknown'}
                               </h4>
                               <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
                                 <span>{new Date(room.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -254,21 +266,24 @@ const Dashboard = () => {
                           </div>
                           
                           <div className="flex items-center gap-4">
-                            <div className="flex -space-x-3">
-                              {room.members.slice(0, 4).map((member) => (
-                                <Avatar key={member.id} className="h-9 w-9 border-2 border-white ring-1 ring-slate-100">
-                                  <AvatarImage src={member.avatar} />
-                                  <AvatarFallback className="bg-slate-100 text-slate-600 text-xs font-bold">
-                                    {member.name?.charAt(0)}
-                                  </AvatarFallback>
-                                </Avatar>
-                              ))}
-                              {room.members.length > 4 && (
-                                <div className="h-9 w-9 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-xs font-bold text-slate-500 ring-1 ring-slate-100">
-                                  +{room.members.length - 4}
+                            {/* GUARD CLAUSE: Pastikan members ada */}
+                            {room.members && (
+                                <div className="flex -space-x-3">
+                                {room.members.slice(0, 4).map((member) => (
+                                    <Avatar key={member.id} className="h-9 w-9 border-2 border-white ring-1 ring-slate-100">
+                                    <AvatarImage src={member.avatar} />
+                                    <AvatarFallback className="bg-slate-100 text-slate-600 text-xs font-bold">
+                                        {member.name?.charAt(0)}
+                                    </AvatarFallback>
+                                    </Avatar>
+                                ))}
+                                {room.members.length > 4 && (
+                                    <div className="h-9 w-9 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-xs font-bold text-slate-500 ring-1 ring-slate-100">
+                                    +{room.members.length - 4}
+                                    </div>
+                                )}
                                 </div>
-                              )}
-                            </div>
+                            )}
                             <Badge variant="secondary" className="bg-slate-100 text-slate-600">
                               Selesai
                             </Badge>
