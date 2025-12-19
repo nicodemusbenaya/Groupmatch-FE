@@ -21,10 +21,79 @@ export const RoomProvider = ({ children }) => {
   const [matchmakingStatus, setMatchmakingStatus] = useState('idle'); 
   const [messages, setMessages] = useState([]);
   const [roomHistory, setRoomHistory] = useState([]); // Default empty array
+  const [isReconnecting, setIsReconnecting] = useState(false);
   
   const socketRef = useRef(null);
   const pollingRef = useRef(null);
   const isSearchingRef = useRef(false); // Ref untuk track status searching
+  const hasLeftRoomRef = useRef(false); // Ref untuk track jika user sengaja keluar room
+
+  // Simpan activeRoom ke localStorage setiap kali berubah
+  useEffect(() => {
+    if (activeRoom) {
+      localStorage.setItem('activeRoom', JSON.stringify(activeRoom));
+      console.log("Room saved to localStorage:", activeRoom.id);
+    } else {
+      localStorage.removeItem('activeRoom');
+    }
+  }, [activeRoom]);
+
+  // Restore room dari localStorage saat aplikasi dimuat
+  useEffect(() => {
+    const restoreRoom = async () => {
+      if (!user) return;
+      
+      // Jangan restore jika user baru saja sengaja keluar dari room
+      if (hasLeftRoomRef.current) {
+        console.log("User intentionally left room, skipping restore");
+        return;
+      }
+      
+      const savedRoom = localStorage.getItem('activeRoom');
+      if (savedRoom) {
+        try {
+          const roomData = JSON.parse(savedRoom);
+          console.log("Found saved room:", roomData.id);
+          setIsReconnecting(true);
+          
+          // Verifikasi apakah room masih aktif di backend
+          try {
+            const response = await api.get(`/rooms/${roomData.id}`);
+            if (response.data) {
+              console.log("Room still valid, reconnecting...");
+              // Update room data dengan data terbaru dari backend (isReconnect = true)
+              handleMatchFound(roomData.id, response.data, true);
+              toast({ title: 'Terhubung Kembali', description: 'Anda kembali ke room sebelumnya.' });
+            }
+          } catch (e) {
+            // Room sudah tidak valid, hapus dari localStorage
+            console.log("Room no longer valid:", e?.response?.status);
+            localStorage.removeItem('activeRoom');
+            
+            // Coba cek apakah user punya room aktif lain
+            try {
+              const myRoomRes = await api.get('/rooms/my');
+              if (myRoomRes.data && myRoomRes.data.id) {
+                console.log("Found active room via /rooms/my");
+                handleMatchFound(myRoomRes.data.id, myRoomRes.data, true);
+                toast({ title: 'Terhubung Kembali', description: 'Anda kembali ke room aktif.' });
+              }
+            } catch (err) {
+              // Tidak ada room aktif
+              console.log("No active room found");
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing saved room:", e);
+          localStorage.removeItem('activeRoom');
+        } finally {
+          setIsReconnecting(false);
+        }
+      }
+    };
+
+    restoreRoom();
+  }, [user]);
 
   const cleanupConnection = () => {
     if (socketRef.current) {
@@ -108,27 +177,50 @@ export const RoomProvider = ({ children }) => {
       try {
         // STRATEGI 1: Cek status matchmaking queue
         // Ini endpoint yang memberitahu apakah sudah match atau masih waiting
+// src/contexts/RoomContext.js (Bagian startPollingRoom)
+
+// ...
+        // STRATEGI 1: Cek status matchmaking queue
         try {
             const queueStatus = await api.get('/matchmaking/status');
             console.log("Queue status response:", queueStatus.data);
+            
             if (queueStatus.data) {
                 const status = queueStatus.data;
-                // Jika sudah match dan ada room_id
+                
+                // KASUS A: Sudah dapat Room (Matched)
                 if (status.status === 'matched' && status.room_id) {
                     console.log("Match Found via /matchmaking/status!");
                     clearInterval(pollingRef.current);
                     pollingRef.current = null;
-                    handleMatchFound(status.room_id, status);
+                    
+                    // Kita perlu detail room (members, dll)
+                    // Panggil API get room detail atau pass dummy data agar fetch ulang
+                    handleMatchFound(status.room_id, { id: status.room_id, members: [] }); 
+                    
+                    // Fetch ulang detail room agar list member muncul
+                    try {
+                        const roomDetail = await api.get(`/rooms/${status.room_id}`); // Pastikan endpoint ini ada
+                        if(roomDetail.data) setActiveRoom(prev => ({...prev, ...mapRoomData(roomDetail.data)}));
+                    } catch(err) {
+                        // Fallback: fetch list semua room jika endpoint detail spesifik tidak ada
+                        const allRooms = await api.get('/rooms/');
+                        const myRoom = allRooms.data.find(r => r.id === status.room_id);
+                        if(myRoom) handleMatchFound(status.room_id, myRoom);
+                    }
                     return;
+                }
+                
+                // KASUS B: Masih Idle/Tidak di queue (mungkin tertendang atau error)
+                if (status.status === 'idle') {
+                     // Opsional: Stop polling jika server bilang user tidak antri
+                     // isSearchingRef.current = false;
                 }
             }
         } catch (e) {
-            // Ignore jika endpoint tidak tersedia (404)
-            if (e?.response?.status !== 404) {
-                console.log("Status check error:", e?.response?.status);
-            }
+            // Ignore error
         }
-
+// ...
         // STRATEGI 2: Cek endpoint /rooms/my (Untuk semua member yang sudah di-assign ke room)
         try {
             const myRoomRes = await api.get('/rooms/my');
@@ -208,7 +300,7 @@ export const RoomProvider = ({ children }) => {
     }, 2000); // Cek setiap 2 detik (lebih responsif)
   };
 
-  const handleMatchFound = (roomId, roomData) => {
+  const handleMatchFound = (roomId, roomData, isReconnect = false) => {
     isSearchingRef.current = false; // Stop polling
     setMatchmakingStatus('matched');
     
@@ -243,10 +335,10 @@ export const RoomProvider = ({ children }) => {
     console.log("Setting active room:", newActiveRoom);
     setActiveRoom(newActiveRoom);
 
-    connectWebSocket(roomId);
+    connectWebSocket(roomId, isReconnect);
   };
 
-  const connectWebSocket = (roomId) => {
+  const connectWebSocket = (roomId, isReconnect = false) => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
@@ -255,7 +347,9 @@ export const RoomProvider = ({ children }) => {
 
     ws.onopen = () => {
       console.log("WS Connected");
-      toast({ title: 'Tim Terbentuk!', description: 'Anda telah masuk ke ruang kolaborasi.' });
+      if (!isReconnect) {
+        toast({ title: 'Tim Terbentuk!', description: 'Anda telah masuk ke ruang kolaborasi.' });
+      }
     };
 
     ws.onmessage = (event) => {
@@ -279,10 +373,10 @@ export const RoomProvider = ({ children }) => {
                 ...prev,
                 members: data.map(u => ({
                     id: u.user_id,
-                    name: u.username,
+                    name: u.name || u.username || 'User', // Prioritaskan nama lengkap
                     username: u.username,
-                    role: 'Member', // Backend belum kirim role via WS
-                    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
+                    role: u.role || 'Member',
+                    avatar: u.pict || u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username || u.user_id}`
                 }))
             }));
             break;
@@ -291,7 +385,7 @@ export const RoomProvider = ({ children }) => {
             setMessages(prev => [...prev, {
                 id: Date.now(),
                 userId: data.user_id,
-                username: data.username,
+                username: data.name || data.username, // Prioritaskan nama lengkap
                 text: data.text,
                 timestamp: new Date(),
                 type: 'user'
@@ -323,22 +417,45 @@ export const RoomProvider = ({ children }) => {
   };
 
   const leaveRoom = async () => {
+    // Set flag bahwa user sengaja keluar
+    hasLeftRoomRef.current = true;
     isSearchingRef.current = false;
-    cleanupConnection();
     
-    // Coba beritahu backend bahwa user keluar dari room
-    if (activeRoom?.id) {
-      try {
-        await api.post(`/rooms/${activeRoom.id}/leave`);
-        console.log("Left room:", activeRoom.id);
-      } catch (e) {
-        console.log("Leave room endpoint error:", e?.response?.status);
-      }
-    }
+    // Hapus room dari localStorage DULU sebelum cleanup
+    localStorage.removeItem('activeRoom');
     
+    const roomId = activeRoom?.id;
+    
+    // Reset state segera
     setActiveRoom(null);
     setMatchmakingStatus('idle');
     setMessages([]);
+    
+    // Cleanup WebSocket
+    cleanupConnection();
+    
+    // Coba beritahu backend bahwa user keluar dari room
+    if (roomId) {
+      try {
+        await api.post(`/rooms/${roomId}/leave`);
+        console.log("Left room:", roomId);
+      } catch (e) {
+        // Coba endpoint alternatif
+        try {
+          await api.delete(`/rooms/${roomId}/members/me`);
+          console.log("Left room via DELETE:", roomId);
+        } catch (e2) {
+          console.log("Leave room endpoint error:", e?.response?.status, e2?.response?.status);
+        }
+      }
+    }
+    
+    console.log("Room left successfully, localStorage cleared");
+    
+    // Reset flag setelah delay agar restoreRoom tidak trigger
+    setTimeout(() => {
+      hasLeftRoomRef.current = false;
+    }, 1000);
   };
 
   const endSession = () => leaveRoom();
@@ -351,6 +468,7 @@ export const RoomProvider = ({ children }) => {
       matchmakingStatus,
       messages,
       roomHistory,
+      isReconnecting,
       startMatchmaking,
       cancelMatchmaking,
       sendMessage,

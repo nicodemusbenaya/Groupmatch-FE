@@ -9,13 +9,13 @@ import { Badge } from '../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
-import { Crown, Send, LogOut, Users, Copy, Settings, UserCircle, Home, Eye } from 'lucide-react';
+import { Crown, Send, LogOut, Users, Copy, Settings, UserCircle, Home, Eye, Loader2 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
 const Room = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { activeRoom, messages, sendMessage, endSession, leaveRoom } = useRoom();
+  const { activeRoom, messages, sendMessage, endSession, leaveRoom, isReconnecting } = useRoom();
   const { toast } = useToast();
   const [messageInput, setMessageInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -29,10 +29,35 @@ const Room = () => {
   }, [messages]);
 
   useEffect(() => {
-    if (!activeRoom) {
-      navigate('/dashboard');
+    // Hanya redirect jika tidak ada room DAN tidak sedang reconnecting
+    if (!activeRoom && !isReconnecting) {
+      // Cek apakah ada saved room di localStorage
+      const savedRoom = localStorage.getItem('activeRoom');
+      if (!savedRoom) {
+        navigate('/dashboard');
+      }
     }
-  }, [activeRoom, navigate]);
+  }, [activeRoom, isReconnecting, navigate]);
+
+  // Tampilkan loading jika sedang reconnecting
+  if (isReconnecting) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="h-12 w-12 text-cyan-500 animate-spin mb-4" />
+        <p className="text-cyan-700 font-medium">Menghubungkan kembali ke room...</p>
+      </div>
+    );
+  }
+
+  // Jika ada saved room tapi belum ter-load, tampilkan loading
+  if (!activeRoom && localStorage.getItem('activeRoom')) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="h-12 w-12 text-cyan-500 animate-spin mb-4" />
+        <p className="text-cyan-700 font-medium">Memuat room...</p>
+      </div>
+    );
+  }
 
   if (!activeRoom) return null;
 
@@ -50,14 +75,14 @@ const Room = () => {
     }
   };
 
-  const handleEndSession = () => {
-    endSession();
+  const handleEndSession = async () => {
+    await endSession();
     toast({ title: 'Sesi selesai', description: 'Anda telah meninggalkan room.' });
     navigate('/dashboard');
   };
 
-  const handleLeaveRoom = () => {
-    leaveRoom();
+  const handleLeaveRoom = async () => {
+    await leaveRoom();
     toast({ title: 'Keluar dari room', description: 'Anda telah keluar dari tim.' });
     navigate('/dashboard');
   };
@@ -114,10 +139,10 @@ const Room = () => {
                         </Avatar>
                         <div className="overflow-hidden">
                             <p className="text-sm font-medium truncate">
-                                {member.name || member.username}
+                                {member.name}
                                 {member.id === activeRoom.leaderId && <Crown className="inline h-3 w-3 ml-1 text-yellow-500"/>}
                             </p>
-                            <p className="text-xs text-slate-500">Member</p>
+                            <p className="text-xs text-slate-500">{member.role || 'Member'}</p>
                         </div>
                     </div>
                 ))}

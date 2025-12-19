@@ -1,55 +1,82 @@
 import React, { useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext'; 
 
 const OAuthCallback = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
-  const { fetchUserProfile, user } = useAuth(); 
+  const { fetchUserProfile } = useAuth(); 
   const processedRef = useRef(false);
 
   useEffect(() => {
     const handleCallback = async () => {
         if (processedRef.current) return;
         
-        const token = searchParams.get('token');
+        // Coba ambil token dari query params dengan berbagai kemungkinan nama
+        let token = searchParams.get('token') || 
+                    searchParams.get('access_token') ||
+                    searchParams.get('jwt');
+        
+        // Juga cek dari hash fragment (beberapa OAuth provider menggunakan ini)
+        if (!token && location.hash) {
+            const hashParams = new URLSearchParams(location.hash.substring(1));
+            token = hashParams.get('token') || 
+                    hashParams.get('access_token') ||
+                    hashParams.get('jwt');
+        }
+        
+        console.log("OAuth Callback - URL:", window.location.href);
+        console.log("OAuth Callback - Token found:", token ? "Yes" : "No");
+        
         if (token) {
             processedRef.current = true;
             localStorage.setItem('token', token);
+            console.log("Token saved to localStorage");
             
             // Panggil fetch untuk memastikan token valid & cek status profil
             const isAuthSuccess = await fetchUserProfile();
+            console.log("Auth success:", isAuthSuccess);
             
             if (isAuthSuccess) {
-                // Cek state user yang baru saja di-set oleh fetchUserProfile
-                // Kita beri sedikit delay agar state React sempat terupdate
+                // Beri delay agar state React sempat terupdate
                 setTimeout(() => {
-                   // Cek apakah user sudah lengkap profilnya?
-                   // Karena kita di dalam async function, kita cek manual atau asumsikan dari return value
-                   // Logika: Jika auth sukses, kita coba ke dashboard. 
-                   // Nanti Dashboard/ProtectedRoute akan redirect ke setup jika profil belum lengkap
-                   // Tapi lebih aman kita arahkan manual:
-                   
-                   // Kita baca ulang token/user
                    const savedUser = localStorage.getItem('currentUser');
-                   if (savedUser && JSON.parse(savedUser).profileComplete) {
-                       navigate('/dashboard', { replace: true });
+                   console.log("Saved user:", savedUser);
+                   
+                   if (savedUser) {
+                       const userData = JSON.parse(savedUser);
+                       if (userData.profileComplete) {
+                           console.log("Redirecting to dashboard");
+                           navigate('/dashboard', { replace: true });
+                       } else {
+                           console.log("Redirecting to profile-setup");
+                           navigate('/profile-setup', { replace: true });
+                       }
                    } else {
+                       // Jika tidak ada currentUser tapi auth sukses, 
+                       // berarti profil belum dibuat
+                       console.log("No saved user, redirecting to profile-setup");
                        navigate('/profile-setup', { replace: true });
                    }
-                }, 100);
+                }, 200);
             } else {
-                // Token invalid
+                console.log("Auth failed, redirecting to login");
+                localStorage.removeItem('token');
                 navigate('/login', { replace: true });
             }
         } else {
-            if (!processedRef.current) navigate('/login', { replace: true });
+            console.log("No token found in URL, redirecting to login");
+            if (!processedRef.current) {
+                processedRef.current = true;
+                navigate('/login', { replace: true });
+            }
         }
     };
 
     handleCallback();
-  }, [searchParams, navigate, fetchUserProfile]);
+  }, [searchParams, location, navigate, fetchUserProfile]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

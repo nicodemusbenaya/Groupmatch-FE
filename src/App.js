@@ -55,8 +55,10 @@ function App() {
             />
 
             {/* --- 2. TAMBAHKAN ROUTE INI --- */}
-            {/* Route ini menangup redirect dari Google/Backend */}
+            {/* Route ini menangkap redirect dari Google/Backend */}
             <Route path="/auth/callback" element={<OAuthCallback />} />
+            <Route path="/auth/google/callback" element={<OAuthCallback />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
             {/* ------------------------------- */}
 
             {/* Profile Setup */}
