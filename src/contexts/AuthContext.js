@@ -108,10 +108,30 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = () => {
-    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-    window.location.href = `${backendUrl}/auth/google/login`;
+// src/contexts/AuthContext.js
+
+// ... kode sebelumnya ...
+
+  const loginWithGoogle = async () => {
+    try {
+      // 1. Request ke backend untuk mendapatkan URL Login (bukan redirect langsung)
+      // Gunakan instance 'api' yang sudah ada agar base URL otomatis ter-handle
+      const response = await api.get('/auth/google/login'); 
+      
+      // 2. Ambil login_url dari JSON response backend
+      const { login_url } = response.data;
+
+      // 3. Lakukan redirect di browser menggunakan URL dari Google tersebut
+      if (login_url) {
+        window.location.href = login_url;
+      }
+    } catch (error) {
+      console.error("Gagal inisialisasi Google Login:", error);
+      // Opsional: Tampilkan toast error disini
+    }
   };
+
+// ... sisa kode ...
 
   const uploadAvatar = async (imageFile) => {
     try {
