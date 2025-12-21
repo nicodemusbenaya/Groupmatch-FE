@@ -5,6 +5,28 @@ import { useToast } from '../hooks/use-toast';
 
 const RoomContext = createContext(null);
 
+// Transform API room response to match activeRoom state format
+const mapRoomData = (roomData) => {
+  if (!roomData) return {};
+  
+  return {
+    id: roomData.id,
+    leader_id: roomData.leader_id,
+    status: roomData.status || 'active',
+    capacity: roomData.capacity || 3,
+    current_count: roomData.current_count || roomData.members?.length || 0,
+    created_at: roomData.created_at,
+    members: (roomData.members || []).map(m => ({
+      id: m.user_id,
+      name: m.name || m.username || 'User',
+      username: m.username,
+      role: m.role || 'Member',
+      role_id: m.role_id,
+      avatar: m.pict || m.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.username || m.user_id}`
+    }))
+  };
+};
+
 export const useRoom = () => {
   const context = useContext(RoomContext);
   if (!context) {
