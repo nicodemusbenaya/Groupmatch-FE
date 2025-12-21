@@ -114,7 +114,30 @@ export const RoomProvider = ({ children }) => {
       }
     };
 
+    const fetchRoomHistory = async () => {
+      if (!user) return;
+      try {
+        // Try to fetch all rooms and find user's participation
+        const response = await api.get('/rooms');
+        if (response.data && Array.isArray(response.data)) {
+          console.log("Fetched rooms:", response.data.length);
+          // Filter rooms where user is/was a member
+          const userRooms = response.data.filter(room => 
+            room.members?.some(m => m.user_id === user.id || m.id === user.id)
+          );
+          console.log("User's room history:", userRooms.length, "rooms");
+          // Filter out active room from history
+          const historyRooms = userRooms.filter(room => room.id !== activeRoom?.id);
+          setRoomHistory(historyRooms);
+        }
+      } catch (err) {
+        console.log("Error fetching room history:", err?.response?.status);
+        setRoomHistory([]);
+      }
+    };
+
     restoreRoom();
+    fetchRoomHistory();
   }, [user]);
 
   const cleanupConnection = () => {

@@ -230,16 +230,29 @@ const Dashboard = () => {
                   ) : (
                     <div className="divide-y divide-slate-100">
                       {roomHistory.map((room) => (
-                        <div key={room.id} className="p-5 flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="h-12 w-12 bg-cyan-100 rounded-xl flex items-center justify-center text-cyan-600 font-bold">
-                              #{room.id ? room.id.slice(-2) : '??'}
+                        <div key={room.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="h-12 w-12 bg-gradient-to-br from-cyan-100 to-blue-100 rounded-xl flex items-center justify-center text-cyan-600 font-bold text-sm">
+                              #{room.id}
                             </div>
-                            <div>
-                                <h4 className="font-bold text-slate-900">Tim #{room.id}</h4>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-slate-900">Tim #{room.id}</h4>
+                              <div className="flex gap-2 mt-1">
+                                {room.members?.slice(0, 3).map((member, idx) => (
+                                  <span key={idx} className="inline-flex items-center gap-1 text-xs text-slate-600 bg-slate-50 px-2 py-1 rounded-md">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                                    {member.username || member.name}
+                                  </span>
+                                ))}
+                                {room.members?.length > 3 && (
+                                  <span className="inline-flex items-center text-xs text-slate-500">
+                                    +{room.members.length - 3} lainnya
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <Badge variant="secondary">Selesai</Badge>
+                          <Badge variant="outline" className="ml-4 text-xs">Selesai</Badge>
                         </div>
                       ))}
                     </div>
