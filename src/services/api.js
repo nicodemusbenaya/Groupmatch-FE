@@ -7,6 +7,12 @@ const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
 
 export const SOCKET_URL = WS_URL;
 
+export const getRoomHistory = async () => {
+  const res = await api.get("/rooms/history");
+  return res.data;
+};
+
+
 const api = axios.create({
   baseURL: HTTP_URL,
   headers: {
